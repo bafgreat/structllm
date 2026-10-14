@@ -1,0 +1,171 @@
+# Scenario specs for synthetic StructLLM conversations.
+#
+# A request writer turns each spec into several conversations; a teacher then
+# answers them through the orchestrator against the development server. Specs
+# describe what the user wants, never what the assistant says.
+#
+# behaviour: what a good answer to a user message does
+#   execute        use the listed tools and report the result
+#   clarify        required information is missing: ask, run nothing that changes anything
+#   approval_hold  the request is expensive: submit once, report that it waits for approval
+#   unsupported    StructSub cannot do it: say so (find_tools may be used to check)
+#   failure        the input is invalid: report the backend error and how to fix it
+#   discuss        answer from the conversation so far; run nothing that changes anything
+# tools:           tools a good answer is expected to use
+# forbidden_tools: tools a good answer must not use. These catch answers driven
+#                  by words rather than meaning ("don't relax it" must not relax).
+# uses_prior_revision: structure arguments must name a revision that already
+#                  appeared in the conversation, so "it" is resolved from context.
+# setup:           cheap calls made before the conversation; the last
+#                  structure_revision_id is given as the current structure.
+# slots:           values the writer must use so conversations differ in
+#                  substance. A follow-up lists the slots it uses; the first
+#                  message uses the rest. zip_slots: value i of each slot list
+#                  belongs together.
+# followups:       later user messages in the same conversation, each with its
+#                  own behaviour and checks.
+version: 1
+scenarios:
+  # ---------------------------------------------------------------- building
+  # Curation with the find_overlaps tool (needs the catalogue that contains it).
+  - id: cur_find_overlaps_uploaded
+    behaviour: execute
+    tools: [find_overlaps]
+    forbidden_tools: [delete_atoms, relax, remove_guests]
+    uses_prior_revision: true
+    setup:
+      - tool: import_structure
+        parameters:
+          content: |
+            data_nacl_duplicate
+            _cell_length_a 5.640
+            _cell_length_b 5.640
+            _cell_length_c 5.640
+            _cell_angle_alpha 90
+            _cell_angle_beta 90
+            _cell_angle_gamma 90
+            _symmetry_space_group_name_H-M 'P 1'
+            loop_
+            _atom_site_label
+            _atom_site_type_symbol
+            _atom_site_fract_x
+            _atom_site_fract_y
+            _atom_site_fract_z
+            Na1 Na 0.0 0.0 0.0
+            Na2 Na 0.5 0.5 0.0
+            Na3 Na 0.5 0.0 0.5
+            Na4 Na 0.0 0.5 0.5
+            Cl1 Cl 0.5 0.5 0.5
+            Cl2 Cl 0.0 0.0 0.5
+            Cl3 Cl 0.0 0.5 0.0
+            Cl4 Cl 0.5 0.0 0.0
+            Na5 Na 0.01 0.0 0.0
+          format: cif
+    brief: >-
+      The user has just uploaded a crystal file and asks the assistant to check it
+      for overlapping or duplicated atoms and list them, without changing anything.
+    slots:
+      wording: [overlapping atoms, atoms on top of each other, duplicated sites, atoms that are too close]
+    variants: 3
+
+  - id: cur_find_then_remove_duplicate
+    behaviour: execute
+    tools: [find_overlaps]
+    forbidden_tools: [delete_atoms, relax]
+    uses_prior_revision: true
+    setup:
+      - tool: import_structure
+        parameters:
+          content: |
+            data_nacl_duplicate
+            _cell_length_a 5.640
+            _cell_length_b 5.640
+            _cell_length_c 5.640
+            _cell_angle_alpha 90
+            _cell_angle_beta 90
+            _cell_angle_gamma 90
+            _symmetry_space_group_name_H-M 'P 1'
+            loop_
+            _atom_site_label
+            _atom_site_type_symbol
+            _atom_site_fract_x
+            _atom_site_fract_y
+            _atom_site_fract_z
+            Na1 Na 0.0 0.0 0.0
+            Na2 Na 0.5 0.5 0.0
+            Na3 Na 0.5 0.0 0.5
+            Na4 Na 0.0 0.5 0.5
+            Cl1 Cl 0.5 0.5 0.5
+            Cl2 Cl 0.0 0.0 0.5
+            Cl3 Cl 0.0 0.5 0.0
+            Cl4 Cl 0.5 0.0 0.0
+            Na5 Na 0.01 0.0 0.0
+          format: cif
+    brief: The user asks the assistant to find any atoms in the uploaded file that overlap each other, and only to report them.
+    followups:
+      - behaviour: execute
+        tools: [delete_atoms]
+        uses_prior_revision: true
+        brief: The user tells the assistant to remove the duplicate atom it found and keep the other one, without giving an index.
+    variants: 3
+
+  - id: cur_overlaps_then_verify_and_export
+    behaviour: execute
+    tools: [find_overlaps]
+    forbidden_tools: [delete_atoms, relax]
+    uses_prior_revision: true
+    setup:
+      - tool: import_structure
+        parameters:
+          content: |
+            data_nacl_duplicate
+            _cell_length_a 5.640
+            _cell_length_b 5.640
+            _cell_length_c 5.640
+            _cell_angle_alpha 90
+            _cell_angle_beta 90
+            _cell_angle_gamma 90
+            _symmetry_space_group_name_H-M 'P 1'
+            loop_
+            _atom_site_label
+            _atom_site_type_symbol
+            _atom_site_fract_x
+            _atom_site_fract_y
+            _atom_site_fract_z
+            Na1 Na 0.0 0.0 0.0
+            Na2 Na 0.5 0.5 0.0
+            Na3 Na 0.5 0.0 0.5
+            Na4 Na 0.0 0.5 0.5
+            Cl1 Cl 0.5 0.5 0.5
+            Cl2 Cl 0.0 0.0 0.5
+            Cl3 Cl 0.0 0.5 0.0
+            Cl4 Cl 0.5 0.0 0.0
+            Na5 Na 0.01 0.0 0.0
+          format: cif
+    brief: The user asks to clean up the uploaded file, which they suspect has a duplicated atom, and starts by asking what is wrong with it.
+    followups:
+      - behaviour: execute
+        tools: [delete_atoms]
+        uses_prior_revision: true
+        brief: The user says to delete the duplicate.
+      - behaviour: execute
+        tools: [find_overlaps]
+        uses_prior_revision: true
+        brief: The user asks the assistant to check again that no overlapping atoms remain.
+      - behaviour: execute
+        tools: [export_structure]
+        uses_prior_revision: true
+        brief: The user asks for the cleaned structure as a CIF.
+    variants: 2
+
+  - id: cur_overlap_check_on_clean_structure
+    behaviour: execute
+    tools: [find_overlaps]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user asks whether the framework they just built has any overlapping atoms before they start a simulation.
+    slots:
+      zeolite: [MFI, LTA, CHA, FAU]
+    variants: 3

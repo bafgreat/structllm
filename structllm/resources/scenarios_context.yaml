@@ -1,0 +1,1006 @@
+# Scenario specs for synthetic StructLLM conversations.
+#
+# A request writer turns each spec into several conversations; a teacher then
+# answers them through the orchestrator against the development server. Specs
+# describe what the user wants, never what the assistant says.
+#
+# behaviour: what a good answer to a user message does
+#   execute        use the listed tools and report the result
+#   clarify        required information is missing: ask, run nothing that changes anything
+#   approval_hold  the request is expensive: submit once, report that it waits for approval
+#   unsupported    StructSub cannot do it: say so (find_tools may be used to check)
+#   failure        the input is invalid: report the backend error and how to fix it
+#   discuss        answer from the conversation so far; run nothing that changes anything
+# tools:           tools a good answer is expected to use
+# forbidden_tools: tools a good answer must not use. These catch answers driven
+#                  by words rather than meaning ("don't relax it" must not relax).
+# uses_prior_revision: structure arguments must name a revision that already
+#                  appeared in the conversation, so "it" is resolved from context.
+# setup:           cheap calls made before the conversation; the last
+#                  structure_revision_id is given as the current structure.
+# slots:           values the writer must use so conversations differ in
+#                  substance. A follow-up lists the slots it uses; the first
+#                  message uses the rest. zip_slots: value i of each slot list
+#                  belongs together.
+# followups:       later user messages in the same conversation, each with its
+#                  own behaviour and checks.
+version: 1
+scenarios:
+  # ---------------------------------------------------------------- building
+  - id: long_molecule_edit_session
+    behaviour: execute
+    brief: The user asks for a 3D model of a named small molecule.
+    tools:
+    - build_structure
+    slots:
+      molecule:
+      - ethanol
+      - toluene
+      - pyridine
+      - phenol
+      - acetone
+      - aniline
+      group:
+      - amino
+      - fluoro
+      - hydroxyl
+      - methyl
+      - nitro
+      format:
+      - xyz
+      - pdb
+      - cif
+      - mol2
+    followups:
+    - behaviour: execute
+      brief: The user asks to clean up its geometry quickly with the default force field.
+      tools:
+      - relax
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the molecular properties of the cleaned-up version.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to replace one hydrogen of it with a named functional group.
+      tools:
+      - functionalise
+      uses_prior_revision: true
+      slots:
+      - group
+    - behaviour: execute
+      brief: The user changes their mind and asks to take that last change back, without naming it.
+      tools:
+      - undo
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the molecule as a file in a stated format, meaning the version before the functional group.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+      slots:
+      - format
+    variants: 5
+  
+  - id: long_zeolite_study_session
+    behaviour: execute
+    brief: The user asks for a named zeolite framework to be built.
+    tools:
+    - build_structure
+    slots:
+      zeolite:
+      - MFI
+      - CHA
+      - LTA
+      - FAU
+      - SOD
+    followups:
+    - behaviour: execute
+      brief: The user asks only for the porosity of it, nothing else.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks which silicon sites a substitution could act on, and says not to change anything yet.
+      tools:
+      - find_sites
+      forbidden_tools:
+      - replace_atom
+      - substitute
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user says to go ahead and replace the sites you just listed with aluminium, one site only.
+      tools:
+      - replace_atom
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the analysis of the doped version, comparing it to the first.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the doped structure as a CIF.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+    variants: 5
+  
+  - id: long_adsorption_session
+    behaviour: execute
+    brief: The user asks for a named zeolite to be built.
+    tools:
+    - build_structure
+    slots:
+      zeolite:
+      - MFI
+      - CHA
+      - FAU
+      gas:
+      - CO2
+      - methane
+      - nitrogen
+      temperature:
+      - 298 K
+      - 273 K
+      temperature2:
+      - 313 K
+      - 323 K
+    followups:
+    - behaviour: execute
+      brief: The user asks whether a named gas is available for adsorption studies, and says not to run anything yet.
+      tools:
+      - guest_search
+      - guest_catalogue
+      forbidden_tools:
+      - guest_gcmc
+      - guest_isotherm
+      uses_prior_revision: true
+      slots:
+      - gas
+    - behaviour: execute
+      brief: The user asks for a quick Henry constant for that gas at a stated temperature.
+      tools:
+      - guest_isotherm
+      forbidden_tools:
+      - guest_gcmc
+      uses_prior_revision: true
+      slots:
+      - temperature
+    - behaviour: execute
+      brief: The user asks for the same estimate at a different temperature, mentioning only the new temperature.
+      tools:
+      - guest_isotherm
+      forbidden_tools:
+      - guest_gcmc
+      uses_prior_revision: true
+      slots:
+      - temperature2
+    - behaviour: approval_hold
+      brief: The user asks for a full GCMC uptake at one bar and the first temperature, without repeating the gas.
+      tools:
+      - guest_gcmc
+      uses_prior_revision: true
+      slots:
+      - temperature
+    - behaviour: execute
+      brief: The user asks for the citation to use for this platform.
+      tools:
+      - citation
+    variants: 5
+  
+  - id: long_curation_session
+    behaviour: execute
+    brief: The user has just uploaded a crystal file and asks the assistant to check it for overlapping or duplicated atoms.
+    tools:
+    - find_overlaps
+    uses_prior_revision: true
+    setup:
+    - tool: import_structure
+      parameters:
+        content: '{cif}'
+        format: cif
+    slots:
+      cif:
+      - 'data_NaCl_dup
+  
+        _cell_length_a 5.64
+  
+        _cell_length_b 5.64
+  
+        _cell_length_c 5.64
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Na1 Na 0 0 0
+  
+        Na2 Na 0.5 0.5 0
+  
+        Na3 Na 0.5 0 0.5
+  
+        Na4 Na 0 0.5 0.5
+  
+        Cl5 Cl 0.5 0.5 0.5
+  
+        Cl6 Cl 0 0 0.5
+  
+        Cl7 Cl 0 0.5 0
+  
+        Cl8 Cl 0.5 0 0
+  
+        Na9 Na 0.01 0 0
+  
+        '
+      - 'data_MgO_dup
+  
+        _cell_length_a 4.21
+  
+        _cell_length_b 4.21
+  
+        _cell_length_c 4.21
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Mg1 Mg 0 0 0
+  
+        Mg2 Mg 0.5 0.5 0
+  
+        Mg3 Mg 0.5 0 0.5
+  
+        Mg4 Mg 0 0.5 0.5
+  
+        O5 O 0.5 0.5 0.5
+  
+        O6 O 0 0 0.5
+  
+        O7 O 0 0.5 0
+  
+        O8 O 0.5 0 0
+  
+        Mg9 Mg 0 0.012 0
+  
+        '
+      - 'data_LiF_dup
+  
+        _cell_length_a 4.03
+  
+        _cell_length_b 4.03
+  
+        _cell_length_c 4.03
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Li1 Li 0 0 0
+  
+        Li2 Li 0.5 0.5 0
+  
+        Li3 Li 0.5 0 0.5
+  
+        Li4 Li 0 0.5 0.5
+  
+        F5 F 0.5 0.5 0.5
+  
+        F6 F 0 0 0.5
+  
+        F7 F 0 0.5 0
+  
+        F8 F 0.5 0 0
+  
+        Li9 Li 0 0 0.01
+  
+        '
+      - 'data_KCl_dup
+  
+        _cell_length_a 6.29
+  
+        _cell_length_b 6.29
+  
+        _cell_length_c 6.29
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        K1 K 0 0 0
+  
+        K2 K 0.5 0.5 0
+  
+        K3 K 0.5 0 0.5
+  
+        K4 K 0 0.5 0.5
+  
+        Cl5 Cl 0.5 0.5 0.5
+  
+        Cl6 Cl 0 0 0.5
+  
+        Cl7 Cl 0 0.5 0
+  
+        Cl8 Cl 0.5 0 0
+  
+        K9 K 0.008 0.008 0
+  
+        '
+      - 'data_CaF2_dup
+  
+        _cell_length_a 5.46
+  
+        _cell_length_b 5.46
+  
+        _cell_length_c 5.46
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Ca1 Ca 0 0 0
+  
+        Ca2 Ca 0.5 0.5 0
+  
+        Ca3 Ca 0.5 0 0.5
+  
+        Ca4 Ca 0 0.5 0.5
+  
+        F5 F 0.25 0.25 0.25
+  
+        F6 F 0.25 0.25 0.75
+  
+        F7 F 0.25 0.75 0.25
+  
+        F8 F 0.25 0.75 0.75
+  
+        F9 F 0.75 0.25 0.25
+  
+        F10 F 0.75 0.25 0.75
+  
+        F11 F 0.75 0.75 0.25
+  
+        F12 F 0.75 0.75 0.75
+  
+        Ca13 Ca 0.01 0 0
+  
+        '
+    followups:
+    - behaviour: execute
+      brief: The user says to remove the duplicate atom and keep the other one, without giving an index.
+      tools:
+      - delete_atoms
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to check once more that nothing overlaps now.
+      tools:
+      - find_overlaps
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the porosity of the cleaned structure.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the cleaned structure as a CIF.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+    variants: 5
+  
+  - id: long_curation_undo_session
+    behaviour: execute
+    brief: The user has just uploaded a crystal file and asks which atoms are overlapping, and does not want anything changed
+      yet.
+    tools:
+    - find_overlaps
+    forbidden_tools:
+    - delete_atoms
+    uses_prior_revision: true
+    setup:
+    - tool: import_structure
+      parameters:
+        content: '{cif}'
+        format: cif
+    slots:
+      cif:
+      - 'data_NaCl_dup
+  
+        _cell_length_a 5.64
+  
+        _cell_length_b 5.64
+  
+        _cell_length_c 5.64
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Na1 Na 0 0 0
+  
+        Na2 Na 0.5 0.5 0
+  
+        Na3 Na 0.5 0 0.5
+  
+        Na4 Na 0 0.5 0.5
+  
+        Cl5 Cl 0.5 0.5 0.5
+  
+        Cl6 Cl 0 0 0.5
+  
+        Cl7 Cl 0 0.5 0
+  
+        Cl8 Cl 0.5 0 0
+  
+        Na9 Na 0.01 0 0
+  
+        '
+      - 'data_MgO_dup
+  
+        _cell_length_a 4.21
+  
+        _cell_length_b 4.21
+  
+        _cell_length_c 4.21
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Mg1 Mg 0 0 0
+  
+        Mg2 Mg 0.5 0.5 0
+  
+        Mg3 Mg 0.5 0 0.5
+  
+        Mg4 Mg 0 0.5 0.5
+  
+        O5 O 0.5 0.5 0.5
+  
+        O6 O 0 0 0.5
+  
+        O7 O 0 0.5 0
+  
+        O8 O 0.5 0 0
+  
+        Mg9 Mg 0 0.012 0
+  
+        '
+      - 'data_LiF_dup
+  
+        _cell_length_a 4.03
+  
+        _cell_length_b 4.03
+  
+        _cell_length_c 4.03
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Li1 Li 0 0 0
+  
+        Li2 Li 0.5 0.5 0
+  
+        Li3 Li 0.5 0 0.5
+  
+        Li4 Li 0 0.5 0.5
+  
+        F5 F 0.5 0.5 0.5
+  
+        F6 F 0 0 0.5
+  
+        F7 F 0 0.5 0
+  
+        F8 F 0.5 0 0
+  
+        Li9 Li 0 0 0.01
+  
+        '
+      - 'data_KCl_dup
+  
+        _cell_length_a 6.29
+  
+        _cell_length_b 6.29
+  
+        _cell_length_c 6.29
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        K1 K 0 0 0
+  
+        K2 K 0.5 0.5 0
+  
+        K3 K 0.5 0 0.5
+  
+        K4 K 0 0.5 0.5
+  
+        Cl5 Cl 0.5 0.5 0.5
+  
+        Cl6 Cl 0 0 0.5
+  
+        Cl7 Cl 0 0.5 0
+  
+        Cl8 Cl 0.5 0 0
+  
+        K9 K 0.008 0.008 0
+  
+        '
+      - 'data_CaF2_dup
+  
+        _cell_length_a 5.46
+  
+        _cell_length_b 5.46
+  
+        _cell_length_c 5.46
+  
+        _cell_angle_alpha 90
+  
+        _cell_angle_beta 90
+  
+        _cell_angle_gamma 90
+  
+        _symmetry_space_group_name_H-M ''P 1''
+  
+        loop_
+  
+        _atom_site_label
+  
+        _atom_site_type_symbol
+  
+        _atom_site_fract_x
+  
+        _atom_site_fract_y
+  
+        _atom_site_fract_z
+  
+        Ca1 Ca 0 0 0
+  
+        Ca2 Ca 0.5 0.5 0
+  
+        Ca3 Ca 0.5 0 0.5
+  
+        Ca4 Ca 0 0.5 0.5
+  
+        F5 F 0.25 0.25 0.25
+  
+        F6 F 0.25 0.25 0.75
+  
+        F7 F 0.25 0.75 0.25
+  
+        F8 F 0.25 0.75 0.75
+  
+        F9 F 0.75 0.25 0.25
+  
+        F10 F 0.75 0.25 0.75
+  
+        F11 F 0.75 0.75 0.25
+  
+        F12 F 0.75 0.75 0.75
+  
+        Ca13 Ca 0.01 0 0
+  
+        '
+    followups:
+    - behaviour: execute
+      brief: The user asks to delete the extra atom.
+      tools:
+      - delete_atoms
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user thinks they deleted the wrong one and asks to take the deletion back.
+      tools:
+      - undo
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to delete the other atom of the pair instead, naming the lower index.
+      tools:
+      - delete_atoms
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to verify that no overlaps remain.
+      tools:
+      - find_overlaps
+      uses_prior_revision: true
+    variants: 4
+  
+  - id: long_edit_history_session
+    behaviour: execute
+    brief: The user asks for a named molecule to be built.
+    tools:
+    - build_structure
+    slots:
+      molecule:
+      - benzene
+      - pyridine
+      - toluene
+      group:
+      - amino
+      - fluoro
+      group2:
+      - hydroxyl
+      - methyl
+      - chloro
+    followups:
+    - behaviour: execute
+      brief: The user asks to put a named functional group on it.
+      tools:
+      - functionalise
+      uses_prior_revision: true
+      slots:
+      - group
+    - behaviour: execute
+      brief: The user asks to put a second, different named group on the result.
+      tools:
+      - functionalise
+      uses_prior_revision: true
+      slots:
+      - group2
+    - behaviour: execute
+      brief: The user asks for the structure exactly as it was before either group was added, as an xyz file, without saying
+        which revision.
+      tools:
+      - export_structure
+      forbidden_tools:
+      - functionalise
+      - relax
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the version with both groups as a pdb file.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+    variants: 5
+  
+  - id: long_two_structures_session
+    behaviour: execute
+    brief: The user asks for a first named molecule to be built.
+    tools:
+    - build_structure
+    slots:
+      first:
+      - benzene
+      - ethanol
+      - toluene
+      second:
+      - pyridine
+      - acetone
+      - phenol
+    followups:
+    - behaviour: execute
+      brief: The user asks for a second, different molecule to be built too.
+      tools:
+      - build_structure
+      slots:
+      - second
+    - behaviour: execute
+      brief: The user asks to relax the first molecule, naming it, not the one just built.
+      tools:
+      - relax
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the molecular properties of the second molecule, which was not relaxed.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    variants: 5
+  
+  - id: long_named_mof_session
+    behaviour: execute
+    brief: A user wants a well-known MOF opened by its common name.
+    tools:
+    - open_named_framework
+    - lookup_name
+    - suggest_names
+    slots:
+      mof:
+      - HKUST-1
+      - UiO-66
+      - MOF-5
+      - ZIF-8
+    followups:
+    - behaviour: execute
+      brief: The user asks for the metal nodes and open metal sites of it.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to break it into its distinct building units.
+      tools:
+      - deconstruct
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to remove any unbound solvent from the framework.
+      tools:
+      - remove_guests
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for the cleaned framework as a CIF.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+    variants: 5
+  
+  - id: long_peptide_session
+    behaviour: execute
+    brief: The user asks for a short peptide with a stated sequence to be built.
+    tools:
+    - build_structure
+    slots:
+      sequence:
+      - GGG
+      - YGGFL
+      - KLVFF
+      - AGS
+      ph:
+      - '7'
+      - '7.4'
+      - '5'
+      sequence2:
+      - AAA
+      - GAG
+    followups:
+    - behaviour: execute
+      brief: The user asks to protonate it at a stated pH and prepare it for an AMBER simulation.
+      tools:
+      - prepare_biomolecule
+      uses_prior_revision: true
+      slots:
+      - ph
+    - behaviour: execute
+      brief: The user asks for the prepared peptide as a pdb file.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks to build a second peptide with a different sequence next.
+      tools:
+      - build_structure
+      slots:
+      - sequence2
+    variants: 5
+  
+  - id: long_correction_session
+    behaviour: execute
+    brief: The user asks for a named zeolite framework.
+    tools:
+    - build_structure
+    slots:
+      wrong:
+      - MFI
+      - CHA
+      right:
+      - LTA
+      - FAU
+      gas:
+      - CO2
+      - methane
+      temperature:
+      - 298 K
+      - 273 K
+    followups:
+    - behaviour: execute
+      brief: The user says they typed the wrong one and gives the right zeolite, asking to build that instead.
+      tools:
+      - build_structure
+      slots:
+      - right
+    - behaviour: execute
+      brief: The user asks for its porosity.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for a quick Henry constant for a named gas at a stated temperature.
+      tools:
+      - guest_isotherm
+      forbidden_tools:
+      - guest_gcmc
+      uses_prior_revision: true
+      slots:
+      - gas
+      - temperature
+    variants: 5
+  
+  - id: long_battery_session
+    behaviour: execute
+    brief: The user asks for a lithium crystal to be built from its formula.
+    tools:
+    - build_structure
+    slots:
+      formula:
+      - LiCoO2
+      - LiF
+    followups:
+    - behaviour: execute
+      brief: The user asks for a quick bond-valence estimate of how easily lithium moves through it.
+      tools:
+      - ion_migration
+      uses_prior_revision: true
+    - behaviour: approval_hold
+      brief: The user asks for a more rigorous barrier for the worst hop, from a NEB calculation.
+      tools:
+      - ion_hop_barrier
+      uses_prior_revision: true
+    - behaviour: approval_hold
+      brief: The user asks for the average intercalation voltage and capacity too.
+      tools:
+      - ion_voltage
+      uses_prior_revision: true
+    variants: 3
+  
+  - id: long_recall_session
+    behaviour: execute
+    brief: The user asks for a named zeolite to be built.
+    tools:
+    - build_structure
+    slots:
+      zeolite:
+      - SOD
+      - LTA
+      - CHA
+    followups:
+    - behaviour: execute
+      brief: The user asks for the porosity and topology of it.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    - behaviour: execute
+      brief: The user asks for a quick force-field relaxation, keeping the cell fixed.
+      tools:
+      - relax
+      uses_prior_revision: true
+    - behaviour: discuss
+      brief: The user asks what the topology of the structure was, as found earlier, and how the energy changed on relaxing,
+        without asking for anything to be rerun.
+      forbidden_tools:
+      - analyse
+      - relax
+    variants: 5
+  

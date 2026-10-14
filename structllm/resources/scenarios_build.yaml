@@ -1,0 +1,403 @@
+# Scenario specs for synthetic StructLLM conversations.
+#
+# A request writer turns each spec into several conversations; a teacher then
+# answers them through the orchestrator against the development server. Specs
+# describe what the user wants, never what the assistant says.
+#
+# behaviour: what a good answer to a user message does
+#   execute        use the listed tools and report the result
+#   clarify        required information is missing: ask, run nothing that changes anything
+#   approval_hold  the request is expensive: submit once, report that it waits for approval
+#   unsupported    StructSub cannot do it: say so (find_tools may be used to check)
+#   failure        the input is invalid: report the backend error and how to fix it
+#   discuss        answer from the conversation so far; run nothing that changes anything
+# tools:           tools a good answer is expected to use
+# forbidden_tools: tools a good answer must not use. These catch answers driven
+#                  by words rather than meaning ("don't relax it" must not relax).
+# uses_prior_revision: structure arguments must name a revision that already
+#                  appeared in the conversation, so "it" is resolved from context.
+# setup:           cheap calls made before the conversation; the last
+#                  structure_revision_id is given as the current structure.
+# slots:           values the writer must use so conversations differ in
+#                  substance. A follow-up lists the slots it uses; the first
+#                  message uses the rest. zip_slots: value i of each slot list
+#                  belongs together.
+# followups:       later user messages in the same conversation, each with its
+#                  own behaviour and checks.
+version: 1
+scenarios:
+  # ---------------------------------------------------------------- building
+  - id: bld_zeolite_doped_ratio
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a named zeolite with a stated fraction of its silicon replaced by a stated trivalent element,
+      balanced by a stated charge-compensating cation.
+    slots:
+      zeolite:
+      - FAU
+      - MFI
+      - CHA
+      - MFI
+      ratio:
+      - '2.5'
+      - '30'
+      - '12'
+      - '40'
+      dopant:
+      - aluminium
+      - aluminium
+      - aluminium
+      - gallium
+      cation:
+      - sodium
+      - protons (the acid form)
+      - protons (the acid form)
+      - protons (the acid form)
+    zip_slots: true
+    variants: 4
+  
+  - id: bld_zeolite_tetravalent_dopant
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a named zeolite with some silicon replaced by titanium or germanium at a stated Si-to-dopant
+      ratio; no cation is needed.
+    slots:
+      zeolite:
+      - BEA
+      - MFI
+      - MFI
+      ratio:
+      - '50'
+      - '80'
+      - '30'
+      dopant:
+      - titanium
+      - titanium
+      - germanium
+    zip_slots: true
+    variants: 3
+  
+  - id: bld_zeolite_metal_loading
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants chabazite exchanged with copper to three weight per cent, as a catalyst is specified.
+    slots:
+      loading:
+      - 3 wt%
+      - 3 weight percent
+    variants: 2
+  
+  - id: bld_zeolite_loading_not_balanced
+    behaviour: failure
+    tools:
+    - build_structure
+    brief: A user asks for chabazite with a copper loading that cannot be balanced in whole units.
+    slots:
+      loading:
+      - 2 wt%
+      - 4 wt%
+    followups:
+    - behaviour: execute
+      tools:
+      - build_structure
+      brief: The user accepts the suggested fix and asks for the loading the assistant proposed, or for three weight
+        per cent.
+    variants: 2
+  
+  - id: bld_zeolite_iza_formula
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user pastes the unit-cell composition of a zeolite as the IZA writes it, with the framework type at the
+      end, and asks for that structure.
+    slots:
+      iza:
+      - '|Na58(H2O)240| [Al58Si134O384]-FAU'
+    variants: 2
+  
+  - id: bld_zeolite_batch_composition
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user gives the oxide batch composition of a synthesis and names the zeolite framework it crystallises
+      as, and asks for the structure.
+    slots:
+      batch:
+      - Na2O · Al2O3 · 5SiO2
+      zeolite:
+      - FAU
+      - faujasite
+    variants: 2
+  
+  - id: bld_zeolite_supercell
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a named zeolite in a larger periodic cell, repeated a stated number of times along each axis.
+    slots:
+      zeolite:
+      - LTA
+      - CHA
+      - SOD
+      repeat:
+      - 2 x 2 x 2
+      - 2 x 2 x 1
+    variants: 3
+  
+  - id: bld_zeolite_supercell_auto
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants faujasite with a Si/Al ratio that is not a whole number of aluminium atoms in one cell, and
+      asks the assistant to choose a supercell that makes the ratio exact.
+    slots:
+      ratio:
+      - '2.5'
+    variants: 2
+  
+  - id: bld_formula_known_type
+    behaviour: execute
+    tools:
+    - build_structure
+    - structure_type_candidates
+    brief: A user wants a crystal built from its chemical formula alone, naming nothing about the structure.
+    slots:
+      formula:
+      - SrTiO3
+      - MgAl2O4
+      - ZrSiO4
+      - CaF2
+      - Fe3O4
+      - Al2O3
+    variants: 5
+  
+  - id: bld_formula_ambiguous_then_choice
+    behaviour: execute
+    tools:
+    - structure_type_candidates
+    brief: A user asks for a crystal from a formula that fits several structure types, and has not said which one
+      they mean.
+    slots:
+      formula:
+      - BaTiO3
+      - TiO2
+      - ZnO
+      choice:
+      - the tetragonal room-temperature form
+      - rutile
+      - wurtzite
+    zip_slots: true
+    followups:
+    - behaviour: execute
+      tools:
+      - build_structure
+      brief: The user picks one of the candidates the assistant listed, in plain words, and asks for it to be built.
+      slots:
+      - choice
+    variants: 3
+  
+  - id: bld_formula_named_type
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user asks for a crystal by formula and names the structure type they want.
+    slots:
+      formula:
+      - TiO2 rutile
+      - TiO2 anatase
+      - ZnO wurtzite
+      - SrTiO3 perovskite
+      - BaTiO3 P4mm
+    variants: 4
+  
+  - id: bld_formula_solid_solution
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a mixed-cation or doped oxide written with fractional amounts and expects a cell big enough
+      to hold whole atoms.
+    slots:
+      formula:
+      - Ba0.5Sr0.5TiO3
+      - La0.7Sr0.3MnO3
+      - Zr0.92Y0.08O1.96 in the fluorite structure
+    variants: 3
+  
+  - id: bld_formula_cluster
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a finite block of a simple ionic crystal, a stated number of cells along each direction, not
+      a periodic crystal.
+    slots:
+      formula:
+      - NaCl
+      size:
+      - 3 x 3 x 3
+      - 2 x 2 x 2
+      - 4 x 4 x 4
+    variants: 3
+  
+  - id: bld_crystal_from_spacegroup
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user gives a space group, cell parameters and the fractional coordinates of each distinct site, in a
+      sentence, and asks for that crystal.
+    slots:
+      material:
+      - rock salt
+      - SrTiO3 perovskite
+      - wurtzite ZnO
+      - rutile TiO2
+      details:
+      - space group Fm-3m, a = 5.64 Å, Na at (0, 0, 0) and Cl at (1/2, 1/2, 1/2)
+      - space group Pm-3m, a = 3.905 Å, Sr at (0, 0, 0), Ti at (1/2, 1/2, 1/2) and O at (0, 1/2, 1/2)
+      - space group P6_3mc, a = 3.25 Å, c = 5.21 Å, Zn at (1/3, 2/3, 0) and O at (1/3, 2/3, 0.382)
+      - space group P4_2/mnm, a = 4.594 Å, c = 2.959 Å, Ti at (0, 0, 0) and O at (0.305, 0.305, 0)
+    zip_slots: true
+    variants: 3
+  
+  - id: bld_crystal_spinel_origin
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user gives spinel MgAl2O4 as space group Fd-3m with a stated cell and the site coordinates as tabulated
+      for origin choice 2, and says so.
+    slots:
+      cell:
+      - 8.083 Å
+    variants: 2
+  
+  - id: bld_crystal_supercell
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a crystal given by its space group, cell and sites, repeated as a larger periodic supercell
+      of stated size.
+    slots:
+      material:
+      - rock salt NaCl, space group Fm-3m, a = 5.64 Å, Na at the origin and Cl at (1/2, 1/2, 1/2)
+      repeat:
+      - 2 x 2 x 2
+      - 3 x 3 x 3
+    variants: 2
+  
+  - id: bld_crystal_cluster
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a finite spherical cluster cut from a crystal given by its space group, cell and sites, centred
+      on a stated atom with a stated radius.
+    slots:
+      material:
+      - rock salt NaCl, space group Fm-3m, a = 5.64 Å, Na at the origin and Cl at (1/2, 1/2, 1/2)
+      radius:
+      - 8 Å
+      - 6 Å
+    variants: 2
+  
+  - id: bld_crystal_sheet
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a single graphitic sheet, periodic in two directions only, with vacuum along the third, given
+      by its space group and cell.
+    slots:
+      cell:
+      - a = 2.46 Å, c = 20 Å
+    variants: 2
+  
+  - id: bld_peptide_special_residues
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a peptide that includes a cyclic backbone, a D-amino acid, an N-methylated residue, sarcosine
+      or hydroxyproline.
+    slots:
+      peptide:
+      - the cyclic tetrapeptide Gly-Pro-Gly-Pro
+      - Ala-D-Ala-Ala with the middle residue D
+      - N-methylalanine-glycine-sarcosine
+      - Gly-Pro-Hyp
+    variants: 4
+  
+  - id: bld_peptide_ambiguous_code
+    behaviour: failure
+    tools:
+    - build_structure
+    brief: A user types the three letters ALA as a peptide, which reads both as alanine and as Ala-Leu-Ala.
+    followups:
+    - behaviour: execute
+      tools:
+      - build_structure
+      brief: 'The user says which they meant: the single amino acid alanine, or the tripeptide Ala-Leu-Ala.'
+    variants: 2
+  
+  - id: bld_molecule_multicomponent
+    behaviour: execute
+    tools:
+    - build_structure
+    brief: A user wants a structure containing more than one molecule or ion built together in one structure.
+    slots:
+      system:
+      - ethanol with one water molecule
+      - a sodium ion and a chloride ion
+      - a water molecule next to methanol
+    variants: 3
+  
+  - id: bld_node_metal_swap
+    behaviour: execute
+    tools:
+    - open_building_unit
+    - search_sbus
+    brief: A user wants a copper paddlewheel metal node from the library with the metal changed to another stated
+      metal, as an editable building unit.
+    slots:
+      metal:
+      - zinc
+      - cobalt
+      - nickel
+    variants: 3
+  
+  - id: bld_node_fewer_connections
+    behaviour: execute
+    tools:
+    - open_building_unit
+    - search_sbus
+    brief: A user wants the twelve-connected Zr6 node from the library opened with only eight of its carboxylates
+      kept, as in NU-1000, capped as formates.
+    variants: 2
+  
+  - id: bld_polymer_chain
+    behaviour: execute
+    tools:
+    - build_polymer
+    - open_building_unit
+    - get_building_unit
+    brief: A user wants an infinite one-dimensional polymer chain built by joining copies of a repeat unit end to
+      end.
+    slots:
+      monomer:
+      - ethylene
+      - propylene
+      - a phenylene ring
+    variants: 2
+  
+  - id: bld_dope_mof_metal
+    behaviour: execute
+    tools:
+    - replace_atom
+    uses_prior_revision: true
+    brief: A user wants every zinc atom of a well-known MOF replaced by another metal, keeping the framework.
+    slots:
+      mof:
+      - MOF-5
+      metal:
+      - cobalt
+      - nickel
+    variants: 3
+  

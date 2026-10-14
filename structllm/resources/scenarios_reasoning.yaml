@@ -1,0 +1,683 @@
+# Scenario specs for synthetic StructLLM conversations.
+#
+# A request writer turns each spec into several conversations; a teacher then
+# answers them through the orchestrator against the development server. Specs
+# describe what the user wants, never what the assistant says.
+#
+# behaviour: what a good answer to a user message does
+#   execute        use the listed tools and report the result
+#   clarify        required information is missing: ask, run nothing that changes anything
+#   approval_hold  the request is expensive: submit once, report that it waits for approval
+#   unsupported    StructSub cannot do it: say so (find_tools may be used to check)
+#   failure        the input is invalid: report the backend error and how to fix it
+#   discuss        answer from the conversation so far; run nothing that changes anything
+# tools:           tools a good answer is expected to use
+# forbidden_tools: tools a good answer must not use. These catch answers driven
+#                  by words rather than meaning ("don't relax it" must not relax).
+# uses_prior_revision: structure arguments must name a revision that already
+#                  appeared in the conversation, so "it" is resolved from context.
+# setup:           cheap calls made before the conversation; the last
+#                  structure_revision_id is given as the current structure.
+# slots:           values the writer must use so conversations differ in
+#                  substance. A follow-up lists the slots it uses; the first
+#                  message uses the rest. zip_slots: value i of each slot list
+#                  belongs together.
+# followups:       later user messages in the same conversation, each with its
+#                  own behaviour and checks.
+version: 1
+scenarios:
+  # ---------------------------------------------------------------- building
+  - id: ext_branched_context_000
+    behaviour: execute
+    tools:
+    - analyse
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: Conversation already distinguishes MFI parent, MFI doped and LTA parent; user asks to analyse the pristine
+      one despite a newer doped revision. Resolve referents from explicit revision history. Never reuse atom indices
+      or charges from a different structure.
+    slots:
+      first:
+      - MFI
+      second:
+      - LTA
+    followups:
+    - behaviour: discuss
+      brief: User asks whether the last requested modification altered the original structure; explain revision and
+        parentage without mutating it.
+    variants: 1
+  - id: ext_branched_context_023
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: Conversation already distinguishes FER parent, FER doped and FAU parent; user asks to apply equivalent
+      substitution to the second material with its own atom indices. Resolve referents from explicit revision history.
+      Never reuse atom indices or charges from a different structure.
+    slots:
+      first:
+      - FER
+      second:
+      - FAU
+    followups:
+    - behaviour: discuss
+      brief: User requests audit history for a dopant choice; discuss provenance and what would be needed to verify
+        it.
+    variants: 1
+  - id: ext_branched_context_048
+    behaviour: execute
+    tools:
+    - analyse
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: Conversation already distinguishes MFI parent, MFI doped and LTA parent; user asks to choose candidate
+      two after four variants were produced. Resolve referents from explicit revision history. Never reuse atom indices
+      or charges from a different structure.
+    slots:
+      first:
+      - MFI
+      second:
+      - LTA
+    followups:
+    - behaviour: discuss
+      brief: User asks whether the last requested modification altered the original structure; explain revision and
+        parentage without mutating it.
+    variants: 1
+  - id: ext_compound_identity_000
+    behaviour: execute
+    tools:
+    - lookup_name
+    - suggest_names
+    - compound_entry
+    forbidden_tools:
+    - build_structure
+    brief: User identifies terephthalic acid by a supplier name, nickname or chemical synonym. Can you recognise its
+      common name, abbreviation or equivalent chemical name? No geometry is requested.
+    slots:
+      compound:
+      - terephthalic acid
+    followups:
+    - behaviour: execute
+      brief: After the name is identified, the user explicitly asks to construct that compound, referring to it by
+        the previous alias.
+      tools:
+      - build_structure
+    variants: 1
+  - id: ext_compound_identity_006
+    behaviour: execute
+    tools:
+    - lookup_name
+    - suggest_names
+    - compound_entry
+    forbidden_tools:
+    - build_structure
+    brief: User identifies tetraethyl orthosilicate by a supplier name, nickname or chemical synonym. Does this refer
+      to a linker, solvent, precursor or modulator? No geometry is requested.
+    slots:
+      compound:
+      - tetraethyl orthosilicate
+    followups:
+    - behaviour: discuss
+      brief: The user asks whether this is identical to a different precursor; do not conflate hydration state, stereochemistry,
+        salt form or oxidation state.
+      forbidden_tools:
+      - build_structure
+    variants: 1
+  - id: ext_compound_identity_012
+    behaviour: execute
+    tools:
+    - lookup_name
+    - suggest_names
+    - compound_entry
+    forbidden_tools:
+    - build_structure
+    brief: User identifies ammonium fluoride by a supplier name, nickname or chemical synonym. Can you recognise its
+      common name, abbreviation or equivalent chemical name? No geometry is requested.
+    slots:
+      compound:
+      - ammonium fluoride
+    followups:
+    - behaviour: execute
+      brief: The user asks for another recognised synonym, without requesting a 3D model.
+      tools:
+      - lookup_name
+      - suggest_names
+    variants: 1
+  - id: ext_crystal_doping_000
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: User wants to identify crystallographic sites on a framework before any substitution, not actually dope
+      it. Current material MFI; requested change Si to Al. Preserve exact selected sites and parent revision.
+    slots:
+      framework:
+      - MFI
+      host:
+      - Si
+      dopant:
+      - Al
+      doping_level:
+      - one atom
+    followups:
+    - behaviour: discuss
+      brief: The user asks whether the charge has changed and whether compensating protons or cations might be required;
+        distinguish a chemical recommendation from an actual edit.
+      forbidden_tools:
+      - replace_atom
+      - relax
+    variants: 1
+  - id: ext_crystal_doping_021
+    behaviour: execute
+    tools:
+    - find_sites
+    - replace_atom
+    forbidden_tools:
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: User asks for every occurrence of the host element to be replaced and understands this is a full transmutation,
+      not a dilute dopant. Current material TON; requested change Si to B. Preserve exact selected sites and parent
+      revision.
+    slots:
+      framework:
+      - TON
+      host:
+      - Si
+      dopant:
+      - B
+      doping_level:
+      - 12.5%
+    followups:
+    - behaviour: execute
+      brief: The user refers to the doped revision and asks for a structural analysis of that exact version.
+      tools:
+      - analyse
+      uses_prior_revision: true
+    variants: 1
+  - id: ext_crystal_doping_042
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: User wants to identify crystallographic sites on a framework before any substitution, not actually dope
+      it. Current material SOD; requested change Si to Ga. Preserve exact selected sites and parent revision.
+    slots:
+      framework:
+      - SOD
+      host:
+      - Si
+      dopant:
+      - Ga
+      doping_level:
+      - one symmetry-inequivalent site
+    followups:
+    - behaviour: execute
+      brief: User wants the pre-doping parent exported, not the current modified structure.
+      tools:
+      - export_structure
+      uses_prior_revision: true
+    variants: 1
+  - id: ext_darken_diffusion_000
+    behaviour: discuss
+    forbidden_tools:
+    - guest_diffusion
+    brief: 'MFI and CO2: user asks whether the diffusion output is tracer, self, corrected, Maxwell-Stefan or Fick
+      transport diffusivity. Teach scientifically sound distinction between diffusion definitions; do not label a
+      raw MD coefficient Darken-corrected or invent an unverified correction tool.'
+    slots:
+      framework:
+      - MFI
+      guest:
+      - CO2
+    followups:
+    - behaviour: discuss
+      brief: The user refers to the earlier diffusivity as “it”, then asks whether thermodynamic-factor multiplication
+        was actually applied; be explicit about provenance.
+    variants: 1
+  - id: ext_darken_diffusion_025
+    behaviour: discuss
+    forbidden_tools:
+    - guest_diffusion
+    - guest_isotherm
+    brief: 'CHA and N2: user explicitly says no Darken correction; show the raw diffusivity only. Teach scientifically
+      sound distinction between diffusion definitions; do not label a raw MD coefficient Darken-corrected or invent
+      an unverified correction tool.'
+    slots:
+      framework:
+      - CHA
+      guest:
+      - N2
+    followups:
+    - behaviour: clarify
+      brief: The user provides a new adsorption dataset but it corresponds to a different guest or temperature; do
+        not silently combine it.
+    variants: 1
+  - id: ext_darken_diffusion_049
+    behaviour: unsupported
+    forbidden_tools:
+    - guest_diffusion
+    brief: 'CHA and N2: user asks to compare diffusivities across gases with explicitly different loadings. Teach
+      scientifically sound distinction between diffusion definitions; do not label a raw MD coefficient Darken-corrected
+      or invent an unverified correction tool.'
+    slots:
+      framework:
+      - CHA
+      guest:
+      - N2
+    followups:
+    - behaviour: clarify
+      brief: The user provides a new adsorption dataset but it corresponds to a different guest or temperature; do
+        not silently combine it.
+    variants: 1
+  - id: ext_doping_semantics_002
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: On FAU, user asks to swap Zr for Hf in an MOF and discuss metal-cluster integrity. Interpret chemistry,
+      charge state, periodicity, crystallographic symmetry and requested mutation scope before editing. Site identification
+      alone is not a chemically validated dopant model.
+    slots:
+      framework:
+      - FAU
+    followups:
+    - behaviour: discuss
+      brief: User asks if dopant can increase conductivity; do not assert quantitative property changes without calculation.
+    variants: 1
+  - id: ext_doping_semantics_017
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    - relax
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: On MOR, user asks to swap Zr for Hf in an MOF and discuss metal-cluster integrity. Interpret chemistry,
+      charge state, periodicity, crystallographic symmetry and requested mutation scope before editing. Site identification
+      alone is not a chemically validated dopant model.
+    slots:
+      framework:
+      - MOR
+    followups:
+    - behaviour: discuss
+      brief: User asks if dopant can increase conductivity; do not assert quantitative property changes without calculation.
+    variants: 1
+  - id: ext_doping_semantics_000
+    behaviour: clarify
+    forbidden_tools:
+    - replace_atom
+    - relax
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: On MFI, user asks to replace a metal ion in the actual framework not a free guest. Interpret chemistry,
+      charge state, periodicity, crystallographic symmetry and requested mutation scope before editing. Site identification
+      alone is not a chemically validated dopant model.
+    slots:
+      framework:
+      - MFI
+    followups:
+    - behaviour: discuss
+      brief: User asks whether the step that just happened was only a search or an actual atom replacement; accurately
+        report action history.
+    variants: 1
+  - id: ext_isotherm_fit_export_000
+    behaviour: unsupported
+    forbidden_tools:
+    - guest_gcmc
+    - guest_isotherm
+    brief: 'Future workflow: on MFI, CO2, user wants to fit an adsorption isotherm model to already available numerical
+      uptake-vs-pressure data using single-site Langmuir. This is not mapped to any verified existing fitting/export
+      tool. Avoid claiming success, fabricating data or accepting ambiguous units.'
+    slots:
+      framework:
+      - MFI
+      guest:
+      - CO2
+      model:
+      - single-site Langmuir
+    followups:
+    - behaviour: discuss
+      brief: User asks which essential fields the external fixed-bed code needs; do not invent that code’s schema.
+    variants: 1
+  - id: ext_isotherm_fit_export_040
+    behaviour: discuss
+    forbidden_tools:
+    - guest_gcmc
+    - guest_isotherm
+    brief: 'Future workflow: on BEA, CO2, user wants to request confidence intervals for fitted parameters using single-site
+      Langmuir. This is not mapped to any verified existing fitting/export tool. Avoid claiming success, fabricating
+      data or accepting ambiguous units.'
+    slots:
+      framework:
+      - BEA
+      guest:
+      - CO2
+      model:
+      - single-site Langmuir
+    followups:
+    - behaviour: discuss
+      brief: User asks which essential fields the external fixed-bed code needs; do not invent that code’s schema.
+    variants: 1
+  - id: ext_isotherm_fit_export_082
+    behaviour: clarify
+    forbidden_tools:
+    - guest_gcmc
+    - guest_isotherm
+    brief: 'Future workflow: on MWW, CH4, user wants to ask for a model fit but provides only one isolated uptake
+      point using Sips. This is not mapped to any verified existing fitting/export tool. Avoid claiming success, fabricating
+      data or accepting ambiguous units.'
+    slots:
+      framework:
+      - MWW
+      guest:
+      - CH4
+      model:
+      - Sips
+    followups:
+    - behaviour: discuss
+      brief: User corrects the uptake basis from mol/kg to mmol/g; preserve numerical equivalence and do not invent
+        parameter values.
+    variants: 1
+  - id: ext_ldf_conversion_000
+    behaviour: discuss
+    forbidden_tools:
+    - guest_diffusion
+    - guest_gcmc
+    brief: User wants to obtain an LDF mass-transfer coefficient from a previously mentioned intracrystalline diffusivity
+      for a sphere with stated radius; apply the appropriate geometry-dependent convention and length units. Do not
+      confuse diffusivity in m²/s with LDF coefficient in s⁻¹ or equate crystal size with bed-particle diameter. Do
+      not invent a numerical diffusivity.
+    slots:
+      shape:
+      - sphere
+      size_definition:
+      - radius
+      length:
+      - 100 nm
+    followups:
+    - behaviour: discuss
+      brief: User corrects crystal diameter to radius; recognise that characteristic-length squared changes the inferred
+        coefficient.
+    variants: 1
+  - id: ext_ldf_conversion_005
+    behaviour: discuss
+    forbidden_tools:
+    - guest_diffusion
+    - guest_gcmc
+    brief: User wants to obtain an LDF mass-transfer coefficient from a previously mentioned intracrystalline diffusivity
+      for a sphere with stated radius; apply the appropriate geometry-dependent convention and length units. Do not
+      confuse diffusivity in m²/s with LDF coefficient in s⁻¹ or equate crystal size with bed-particle diameter. Do
+      not invent a numerical diffusivity.
+    slots:
+      shape:
+      - sphere
+      size_definition:
+      - radius
+      length:
+      - 1 micrometre
+    followups:
+    - behaviour: discuss
+      brief: User requests fixed-bed model input and needs to distinguish film resistance, intracrystalline resistance
+        and effective LDF coefficient.
+    variants: 1
+  - id: ext_ldf_conversion_006
+    behaviour: discuss
+    forbidden_tools:
+    - guest_diffusion
+    - guest_gcmc
+    brief: User wants to obtain an LDF mass-transfer coefficient from a previously mentioned intracrystalline diffusivity
+      for a slab with stated diameter; apply the appropriate geometry-dependent convention and length units. Do not
+      confuse diffusivity in m²/s with LDF coefficient in s⁻¹ or equate crystal size with bed-particle diameter. Do
+      not invent a numerical diffusivity.
+    slots:
+      shape:
+      - slab
+      size_definition:
+      - diameter
+      length:
+      - 5 micrometres
+    followups:
+    - behaviour: discuss
+      brief: User corrects crystal diameter to radius; recognise that characteristic-length squared changes the inferred
+        coefficient.
+    variants: 1
+  - id: ext_lowenstein_rules_000
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: 'Zeolite MFI: user discusses doping with this constraint: strictly avoid Al-O-Al nearest-neighbour bridges.
+      For exploratory placement do not assume plain replace_atom guarantees chemical rule satisfaction. Do not claim
+      a constraint-aware enumerator is already implemented.'
+    slots:
+      framework:
+      - MFI
+    followups:
+    - behaviour: discuss
+      brief: The user asks whether an Al-O-Al linkage is a necessary consequence of the previous instruction; answer
+        conditionally based on explicit site connectivity.
+      forbidden_tools:
+      - replace_atom
+    variants: 1
+  - id: ext_lowenstein_rules_065
+    behaviour: execute
+    tools:
+    - find_sites
+    forbidden_tools:
+    - replace_atom
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: 'Zeolite MOR: user discusses doping with this constraint: differentiate no adjacent Al atoms from no Al-O-Al
+      bridges. For exploratory placement do not assume plain replace_atom guarantees chemical rule satisfaction. Do
+      not claim a constraint-aware enumerator is already implemented.'
+    slots:
+      framework:
+      - MOR
+    followups:
+    - behaviour: clarify
+      brief: User now requests a particular Si/Al ratio but has not settled whether Löwenstein violations are permitted.
+      forbidden_tools:
+      - replace_atom
+    variants: 1
+  - id: ext_lowenstein_rules_026
+    behaviour: clarify
+    forbidden_tools:
+    - replace_atom
+    uses_prior_revision: true
+    setup:
+    - tool: build_structure
+      parameters:
+        body:
+          zeolite: '{framework}'
+    brief: 'Zeolite FAU: user discusses doping with this constraint: retain the exact previously selected dopant sites
+      unless they violate a specified rule. For exploratory placement do not assume plain replace_atom guarantees
+      chemical rule satisfaction. Ask whether strict enforcement or deliberately non-Löwenstein models are intended.'
+    slots:
+      framework:
+      - FAU
+    followups:
+    - behaviour: discuss
+      brief: The user asks whether an Al-O-Al linkage is a necessary consequence of the previous instruction; answer
+        conditionally based on explicit site connectivity.
+      forbidden_tools:
+      - replace_atom
+    variants: 1
+  - id: ext_multi_temp_qst_000
+    behaviour: unsupported
+    forbidden_tools:
+    - guest_gcmc
+    - guest_isotherm
+    brief: 'Proposed multi-temperature adsorption workflow in MFI with CO2 at [''273 K'', ''298 K'', ''323 K'']: compute
+      isosteric heat as a function of loading rather than a single zero-loading number. The platform has no verified
+      dedicated multi-temperature Qst-versus-loading orchestration tool in this schema; discuss accurately or clarify.'
+    slots:
+      framework:
+      - MFI
+      guest:
+      - CO2
+      temperatures:
+      - 273 K, 298 K, 323 K
+    followups:
+    - behaviour: discuss
+      brief: User says use the same loadings as before and asks if interpolation is needed; retain loading units and
+        distinguish comparable isosteres.
+    variants: 1
+  - id: ext_multi_temp_qst_005
+    behaviour: clarify
+    forbidden_tools:
+    - guest_gcmc
+    - guest_isotherm
+    brief: 'Proposed multi-temperature adsorption workflow in MOR with C2H6 at [''250 K'', ''275 K'', ''300 K'']:
+      propagate error in fitted isosteres. The platform has no verified dedicated multi-temperature Qst-versus-loading
+      orchestration tool in this schema; discuss accurately or clarify.'
+    slots:
+      framework:
+      - MOR
+      guest:
+      - C2H6
+      temperatures:
+      - 250 K, 275 K, 300 K
+    followups:
+    - behaviour: unsupported
+      brief: User directs assistant to export numerical Qst results even though no simulations or measured data were
+        provided.
+    variants: 1
+  - id: ext_multi_temp_qst_010
+    behaviour: discuss
+    forbidden_tools:
+    - guest_gcmc
+    - guest_isotherm
+    brief: 'Proposed multi-temperature adsorption workflow in MWW with CH4 at [''288 K'', ''303 K'', ''318 K'']: ask
+      the user whether the temperature grid has changed after correction. The platform has no verified dedicated multi-temperature
+      Qst-versus-loading orchestration tool in this schema; discuss accurately or clarify.'
+    slots:
+      framework:
+      - MWW
+      guest:
+      - CH4
+      temperatures:
+      - 288 K, 303 K, 318 K
+    followups:
+    - behaviour: clarify
+      brief: User provides only a range of temperatures with no number of runs or grid and insists on an exact single
+        batch request.
+    variants: 1
+  - id: ext_pasted_conversation_intent_000
+    behaviour: discuss
+    forbidden_tools:
+    - replace_atom
+    - guest_gcmc
+    - guest_diffusion
+    - relax
+    brief: 'User pastes real-world conversational prose: “Hey man, how are you?” plus an extended list of crystal-doping
+      feature requests. Interpret quoted third-party questions as context, not direct consent to mutate materials
+      or spend computation. Answer questions or propose a reply only if asked, and do not promise tools the schema
+      lacks.'
+    followups:
+    - behaviour: execute
+      brief: User then explicitly names a compound from the pasted communication and asks for its identity only.
+      tools:
+      - lookup_name
+      - compound_entry
+    variants: 1
+  - id: ext_pasted_conversation_intent_004
+    behaviour: discuss
+    forbidden_tools:
+    - replace_atom
+    - guest_gcmc
+    - guest_diffusion
+    - relax
+    brief: 'User pastes real-world conversational prose: a message comparing Qst over loading with zero-coverage heats.
+      Interpret quoted third-party questions as context, not direct consent to mutate materials or spend computation.
+      Answer questions or propose a reply only if asked, and do not promise tools the schema lacks.'
+    followups:
+    - behaviour: execute
+      brief: User then explicitly names a compound from the pasted communication and asks for its identity only.
+      tools:
+      - lookup_name
+      - compound_entry
+    variants: 1
+  - id: ext_pasted_conversation_intent_001
+    behaviour: discuss
+    forbidden_tools:
+    - replace_atom
+    - guest_gcmc
+    - guest_diffusion
+    - relax
+    brief: 'User pastes real-world conversational prose: a pasted collaborator email asking whether Al-O-Al violations
+      are allowed. Interpret quoted third-party questions as context, not direct consent to mutate materials or spend
+      computation. Answer questions or propose a reply only if asked, and do not promise tools the schema lacks.'
+    followups:
+    - behaviour: clarify
+      brief: User says “do that” after the pasted note mentioned multiple unrelated operations; clarify which one.
+    variants: 1

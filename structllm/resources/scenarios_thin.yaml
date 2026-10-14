@@ -1,0 +1,472 @@
+# Scenario specs for synthetic StructLLM conversations.
+#
+# A request writer turns each spec into several conversations; a teacher then
+# answers them through the orchestrator against the development server. Specs
+# describe what the user wants, never what the assistant says.
+#
+# behaviour: what a good answer to a user message does
+#   execute        use the listed tools and report the result
+#   clarify        required information is missing: ask, run nothing that changes anything
+#   approval_hold  the request is expensive: submit once, report that it waits for approval
+#   unsupported    StructSub cannot do it: say so (find_tools may be used to check)
+#   failure        the input is invalid: report the backend error and how to fix it
+#   discuss        answer from the conversation so far; run nothing that changes anything
+# tools:           tools a good answer is expected to use
+# forbidden_tools: tools a good answer must not use. These catch answers driven
+#                  by words rather than meaning ("don't relax it" must not relax).
+# uses_prior_revision: structure arguments must name a revision that already
+#                  appeared in the conversation, so "it" is resolved from context.
+# setup:           cheap calls made before the conversation; the last
+#                  structure_revision_id is given as the current structure.
+# slots:           values the writer must use so conversations differ in
+#                  substance. A follow-up lists the slots it uses; the first
+#                  message uses the rest. zip_slots: value i of each slot list
+#                  belongs together.
+# followups:       later user messages in the same conversation, each with its
+#                  own behaviour and checks.
+version: 1
+scenarios:
+  # ---------------------------------------------------------------- building
+  - id: cov_add_hydrogens
+    behaviour: execute
+    tools: [add_hydrogens]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user says the current structure came from an X-ray file with no hydrogens and asks to add the missing ones.
+    slots:
+      smiles: ["CCO", "c1ccccc1O", "CC(=O)O"]
+    variants: 4
+
+  - id: cov_add_single_atom
+    behaviour: execute
+    tools: [add_atom]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user asks to attach one extra atom of a named element to a specific atom of the current molecule, given by its index.
+    zip_slots: true
+    slots:
+      smiles: ["CCO", "c1ccccc1", "CC(=O)O"]
+      element: [Cl, F, Br]
+      index: ["0", "2", "1"]
+    variants: 4
+
+  - id: cov_set_distance
+    behaviour: execute
+    tools: [set_geometry]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user asks to set a named bond length, angle or dihedral between atoms given by index to a stated value, moving only the last atom.
+    zip_slots: true
+    slots:
+      smiles: ["CCO", "CC(=O)O", "CCCC"]
+      coordinate: ["the distance between atoms 0 and 1 to 1.60 angstrom", "the angle 0-1-2 to 115 degrees", "the dihedral 0-1-2-3 to 180 degrees"]
+    variants: 4
+
+  - id: cov_bond_order_change
+    behaviour: execute
+    tools: [set_bond_order]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user asks to change the order of one bond, identified by the indices of its two atoms, for example from single to double.
+    zip_slots: true
+    slots:
+      smiles: ["CC", "CCO", "CC=O"]
+      change: ["make the bond between atoms 0 and 1 a double bond", "make the bond between atoms 1 and 2 a double bond", "turn the double bond between atoms 1 and 2 into a single bond"]
+    variants: 4
+
+  - id: cov_delete_hydrogens_then_redo
+    behaviour: execute
+    tools: [delete_atoms]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user asks to delete one atom, by index, from the current molecule.
+    followups:
+      - behaviour: execute
+        tools: [undo]
+        uses_prior_revision: true
+        brief: The user takes that back, without naming the atom.
+      - behaviour: execute
+        tools: [redo]
+        uses_prior_revision: true
+        brief: The user changes their mind again and asks to put the deletion back.
+    slots:
+      smiles: ["CCO", "CC(=O)O", "c1ccccc1O"]
+    variants: 4
+
+  - id: functionalise_then_undo
+    behaviour: execute
+    tools: [functionalise]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{molecule_smiles}", name: "{molecule}"}}
+    brief: The user asks to put a substituent on the current molecule.
+    followups:
+      - behaviour: execute
+        tools: [undo]
+        uses_prior_revision: true
+        brief: The user changes their mind and asks to take that change back, without naming what the change was.
+    zip_slots: true
+    slots:
+      molecule: [benzene, pyridine, toluene]
+      molecule_smiles: ["c1ccccc1", "c1ccncc1", "Cc1ccccc1"]
+      group: [nitro, chloro, methoxy]
+    variants: 4
+
+  - id: cov_report_from_result
+    behaviour: execute
+    tools: [write_report]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user asks for a short report of what has been done to the current structure so far, as a Word or LaTeX file.
+    slots:
+      zeolite: [MFI, CHA]
+      format: [Word, LaTeX, plain text]
+    variants: 4
+
+  # Measured diffraction patterns
+  - id: cov_pxrd_inspect_and_clear
+    behaviour: execute
+    tools: [pxrd_get_pattern]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user asks which measured pattern is attached to the current structure, without changing anything.
+    slots:
+      zeolite: [MFI, LTA]
+    variants: 4
+
+  # Roadmap capabilities that are not tools yet. The model must say so plainly and
+  # must not improvise with unrelated tools. When the capability exists these are
+  # regenerated with the new tool in the catalogue.
+  - id: cov_space_group_menu
+    behaviour: execute
+    tools: [list_space_groups]
+    brief: The user asks which space groups a crystal can be built in, or whether a particular one is available.
+    slots:
+      group: [Fm-3m, P2_1/c, Pnma, I4/mmm]
+    variants: 4
+
+  - id: cov_peptide_residues
+    behaviour: execute
+    tools: [list_monomers]
+    brief: The user asks which residues and caps a peptide sequence may use, for example whether a modified or non-standard residue is allowed.
+    slots:
+      residue: [phosphoserine, N-methylalanine, D-alanine, acetyl cap]
+    variants: 4
+
+  - id: cov2_salt_and_amino_lists
+    behaviour: execute
+    tools: [list_salts, list_amino_acids]
+    brief: The user asks which metal salts the SBU search recognises, or which amino acids can be used as substituent fragments.
+    slots:
+      ask: [metal salts, amino acids, both]
+    variants: 4
+
+  - id: cov2_set_several_bond_orders
+    behaviour: execute
+    tools: [set_selected_bond_orders]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "CCCC"}}
+    brief: >-
+      The user asks to make two bonds of the current molecule double bonds in one
+      step, the bond between atoms 0 and 1 and the bond between atoms 2 and 3.
+    variants: 4
+
+  - id: cov2_add_bond_ring
+    behaviour: execute
+    tools: [add_bond]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "CCCC"}}
+    brief: The user asks to add a bond between the two end carbons, atoms 0 and 3, of the current molecule to close a ring.
+    variants: 4
+
+  - id: cov2_delete_several_bonds
+    behaviour: execute
+    tools: [delete_selected_bonds]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "CCCC"}}
+    brief: >-
+      The user asks to remove two bonds in one step from the current butane
+      molecule: the bond between atoms 0 and 1 and the bond between atoms 2 and 3.
+    variants: 4
+
+  - id: cov_ion_diffusion
+    behaviour: approval_hold
+    tools: [ion_diffusion]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {formula: "{formula}"}}
+    brief: >-
+      The user wants the ion diffusivity, activation energy and room-temperature
+      conductivity of the current crystal from molecular dynamics at stated
+      temperatures.
+    slots:
+      formula: [LiCoO2, LiF]
+      temperatures: ["300, 600 and 900 K", "400 to 1000 K in steps of 200"]
+    variants: 4
+
+  - id: cov_flexible_breathing
+    behaviour: approval_hold
+    tools: [guest_flexible]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: >-
+      The user asks whether the current framework breathes on adsorption of a
+      stated gas, comparing its forms by adsorption at stated conditions.
+    slots:
+      zeolite: [MFI, CHA]
+      guest: [CO2, CH4]
+      conditions: ["298 K, 0.1 to 10 bar", "273 K, 1 bar"]
+    variants: 4
+
+  - id: framework_topologies_for_units
+    behaviour: execute
+    tools: [match_frameworks, describe_units]
+    brief: >-
+      A user asks which network topologies a given metal node and organic
+      linker could form together, before building anything.
+    slots:
+      combo: ["zinc paddlewheel with terephthalate", "copper paddlewheel with trimesate", "Zr6 cluster with terephthalate"]
+    variants: 4
+
+  # ----------------------------------------------------------------- lookups
+  - id: name_lookup
+    behaviour: execute
+    tools: [lookup_name, suggest_names, compound_entry]
+    forbidden_tools: [build_structure]
+    brief: The user asks what a chemical name or trade name refers to (formula, SMILES), without asking for a structure.
+    slots:
+      name: [paracetamol, TEDA, DABCO, BTC linker, IRMOF-1]
+    variants: 4
+
+  - id: cov2_open_linker_as_building_unit
+    behaviour: execute
+    tools: [open_building_unit]
+    brief: >-
+      The user gives the SMILES of a linker with its two carboxylate groups and asks
+      to open it as an editable building unit for a framework.
+    followups:
+      - behaviour: execute
+        tools: [get_building_unit]
+        uses_prior_revision: true
+        brief: The user asks for the building-unit specification of what they just opened, so they can pass it to the framework builder.
+    slots:
+      smiles: ["OC(=O)c1ccc(cc1)C(=O)O", "OC(=O)c1cc(cc(c1)C(=O)O)C(=O)O", "OC(=O)c1ccc(cc1)c1ccc(cc1)C(=O)O"]
+    variants: 4
+
+  - id: cov2_deconstruct_then_cut_unit
+    behaviour: execute
+    tools: [open_named_framework, lookup_name, suggest_names]
+    brief: A user wants a well-known MOF opened by its common name.
+    followups:
+      - behaviour: execute
+        tools: [deconstruct]
+        uses_prior_revision: true
+        brief: The user asks for the building units of the framework they just opened.
+      - behaviour: execute
+        tools: [cut_building_unit]
+        uses_prior_revision: true
+        brief: The user asks for the first linker from that result as a unit they can use in the framework builder.
+    slots:
+      mof: [MOF-5, HKUST-1]
+    variants: 4
+
+  - id: cov_import_xyz_text
+    behaviour: execute
+    tools: [import_structure]
+    brief: >-
+      The user pastes the literal text of a small XYZ file for a molecule (atom
+      count, comment line and coordinates all written out) and asks to load it.
+    slots:
+      molecule: [water, methanol, ammonia, ethene]
+    variants: 4
+
+  - id: cov_import_cif_text
+    behaviour: execute
+    tools: [import_structure]
+    brief: >-
+      The user pastes the full text of a small CIF (a simple inorganic cell with a
+      cell, space group and a few atom sites, written out in the message) and asks
+      to load it so they can work with it.
+    slots:
+      material: [rock salt NaCl, fluorite CaF2, zinc blende ZnS, periclase MgO]
+    variants: 4
+
+  - id: cov_substitute_linker
+    behaviour: execute
+    tools: [substitute, find_sites]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user asks to replace a whole substituent or fragment on the current molecule with a different one from the fragment library.
+    zip_slots: true
+    slots:
+      smiles: ["Cc1ccccc1", "Oc1ccccc1", "Nc1ccccc1"]
+      fragment: [methyl with trifluoromethyl, hydroxyl with methoxy, amino with nitro]
+    variants: 4
+
+  - id: guest_diffusion_md
+    behaviour: approval_hold
+    tools: [guest_diffusion]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user wants the diffusion coefficient of a gas in the current framework from molecular dynamics.
+    slots:
+      zeolite: [MFI, CHA]
+      guest: [CH4, CO2]
+    variants: 4
+
+  - id: cov_pxrd_attach_and_compare
+    behaviour: execute
+    tools: [pxrd_import_pattern]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: >-
+      The user pastes a few lines of measured powder data (two columns, 2-theta and
+      intensity, written out in the message) and asks to attach it to the current
+      structure.
+    followups:
+      - behaviour: execute
+        tools: [pxrd_compare]
+        uses_prior_revision: true
+        brief: The user asks how well the calculated pattern of the structure matches the measured one they just attached.
+    slots:
+      zeolite: [MFI, SOD]
+    variants: 4
+
+  - id: cov2_pxrd_import_then_clear
+    behaviour: execute
+    tools: [pxrd_import_pattern]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: >-
+      The user pastes about fifteen lines of measured powder data (2-theta and
+      intensity, written out in the message) and asks to attach it to the current
+      structure.
+    followups:
+      - behaviour: execute
+        tools: [pxrd_clear_patterns]
+        uses_prior_revision: true
+        brief: The user decides the pattern was the wrong sample and asks to detach it.
+    slots:
+      zeolite: [MFI, SOD]
+    variants: 4
+
+  - id: fragment_library
+    behaviour: execute
+    tools: [list_fragments, list_amino_acids]
+    brief: The user asks which functional groups or substituents are available to decorate linkers.
+    variants: 4
+
+  - id: mobile_ion_list
+    behaviour: execute
+    tools: [list_mobile_ions]
+    brief: The user asks which mobile ions the ion-transport tools support.
+    variants: 4
+
+  # ------------------------------------------------------------- export/edit
+  - id: export_format_list
+    behaviour: execute
+    tools: [export_formats]
+    brief: The user asks which file formats structures can be exported to, for example whether a code's input format is supported.
+    slots:
+      program: [VASP, LAMMPS, Gaussian, RASPA]
+    variants: 4
+
+  - id: cite_structsub
+    behaviour: execute
+    tools: [citation]
+    brief: The user asks how to cite StructSub in a paper or thesis.
+    followups:
+      - behaviour: execute
+        tools: [citation_file]
+        slots: [citation_format]
+        brief: The user asks for the citation as a file for their reference manager in a particular format, referring to the citation just shown.
+    slots:
+      citation_format: [BibTeX, RIS, EndNote]
+    variants: 4
+
+  - id: topology_net_view
+    behaviour: execute
+    tools: [topology_net, analyse]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user wants the underlying topological net of the current framework so they can draw it.
+    slots:
+      zeolite: [SOD, LTA]
+    variants: 4
+
+  - id: dock_single_guest
+    behaviour: execute
+    tools: [dock_guest]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user wants to know where one guest molecule binds most strongly in the current framework, without changing the structure.
+    slots:
+      zeolite: [MFI, FAU]
+      guest: [CO2, water, methanol]
+    variants: 4
+
+  - id: elastic_moduli_fast
+    behaviour: execute
+    tools: [mechanics]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: >-
+      The user wants a fast, rough estimate of the bulk and shear modulus of
+      the current framework with a classical force field and accepts that it
+      may be too stiff.
+    slots:
+      zeolite: [SOD, LTA]
+    variants: 4
+
+  - id: load_guest_molecules
+    behaviour: execute
+    tools: [load_guests]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: The user wants the pores of the current framework filled with a guest to a stated fraction of liquid density.
+    slots:
+      zeolite: [MFI, FAU]
+      guest: [water, methanol, CO2]
+      loading: ["50%", "0.75", "full"]
+    variants: 4
+

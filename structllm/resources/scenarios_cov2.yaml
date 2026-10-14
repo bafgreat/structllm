@@ -1,0 +1,212 @@
+# Scenario specs for synthetic StructLLM conversations.
+#
+# A request writer turns each spec into several conversations; a teacher then
+# answers them through the orchestrator against the development server. Specs
+# describe what the user wants, never what the assistant says.
+#
+# behaviour: what a good answer to a user message does
+#   execute        use the listed tools and report the result
+#   clarify        required information is missing: ask, run nothing that changes anything
+#   approval_hold  the request is expensive: submit once, report that it waits for approval
+#   unsupported    StructSub cannot do it: say so (find_tools may be used to check)
+#   failure        the input is invalid: report the backend error and how to fix it
+#   discuss        answer from the conversation so far; run nothing that changes anything
+# tools:           tools a good answer is expected to use
+# forbidden_tools: tools a good answer must not use. These catch answers driven
+#                  by words rather than meaning ("don't relax it" must not relax).
+# uses_prior_revision: structure arguments must name a revision that already
+#                  appeared in the conversation, so "it" is resolved from context.
+# setup:           cheap calls made before the conversation; the last
+#                  structure_revision_id is given as the current structure.
+# slots:           values the writer must use so conversations differ in
+#                  substance. A follow-up lists the slots it uses; the first
+#                  message uses the rest. zip_slots: value i of each slot list
+#                  belongs together.
+# followups:       later user messages in the same conversation, each with its
+#                  own behaviour and checks.
+version: 1
+scenarios:
+  # ---------------------------------------------------------------- building
+  # ---------------------------------------------------- coverage, second pass
+  - id: cov2_delete_bond_valid
+    behaviour: execute
+    tools: [delete_bond]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: >-
+      The user asks to remove the bond between two atoms of the current molecule,
+      naming the atoms by index. The two atoms are directly bonded in the molecule,
+      so the request is valid.
+    zip_slots: true
+    slots:
+      smiles: ["CCO", "CCCC", "CC(=O)O"]
+      pair: ["atoms 0 and 1", "atoms 1 and 2", "atoms 0 and 1"]
+    variants: 3
+
+  - id: cov2_delete_several_bonds
+    behaviour: execute
+    tools: [delete_selected_bonds]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "CCCC"}}
+    brief: >-
+      The user asks to remove two bonds in one step from the current butane
+      molecule: the bond between atoms 0 and 1 and the bond between atoms 2 and 3.
+    variants: 2
+
+  - id: cov2_add_bond_ring
+    behaviour: execute
+    tools: [add_bond]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "CCCC"}}
+    brief: The user asks to add a bond between the two end carbons, atoms 0 and 3, of the current molecule to close a ring.
+    variants: 2
+
+  - id: cov2_set_several_bond_orders
+    behaviour: execute
+    tools: [set_selected_bond_orders]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "CCCC"}}
+    brief: >-
+      The user asks to make two bonds of the current molecule double bonds in one
+      step, the bond between atoms 0 and 1 and the bond between atoms 2 and 3.
+    variants: 2
+
+  - id: cov2_open_mof_then_deconstruct
+    behaviour: execute
+    tools: [open_named_framework, lookup_name, suggest_names]
+    brief: A user wants a well-known MOF opened by its common name.
+    followups:
+      - behaviour: execute
+        tools: [deconstruct]
+        uses_prior_revision: true
+        brief: The user asks to break the framework they just opened into its distinct metal nodes and linkers.
+    slots:
+      mof: [HKUST-1, UiO-66, MOF-5, ZIF-8]
+    variants: 4
+
+  - id: cov2_deconstruct_then_cut_unit
+    behaviour: execute
+    tools: [open_named_framework, lookup_name, suggest_names]
+    brief: A user wants a well-known MOF opened by its common name.
+    followups:
+      - behaviour: execute
+        tools: [deconstruct]
+        uses_prior_revision: true
+        brief: The user asks for the building units of the framework they just opened.
+      - behaviour: execute
+        tools: [cut_building_unit]
+        uses_prior_revision: true
+        brief: The user asks for the first linker from that result as a unit they can use in the framework builder.
+    slots:
+      mof: [MOF-5, HKUST-1]
+    variants: 2
+
+  - id: cov2_open_linker_as_building_unit
+    behaviour: execute
+    tools: [open_building_unit]
+    brief: >-
+      The user gives the SMILES of a linker with its two carboxylate groups and asks
+      to open it as an editable building unit for a framework.
+    followups:
+      - behaviour: execute
+        tools: [get_building_unit]
+        uses_prior_revision: true
+        brief: The user asks for the building-unit specification of what they just opened, so they can pass it to the framework builder.
+    slots:
+      smiles: ["OC(=O)c1ccc(cc1)C(=O)O", "OC(=O)c1cc(cc(c1)C(=O)O)C(=O)O", "OC(=O)c1ccc(cc1)c1ccc(cc1)C(=O)O"]
+    variants: 3
+
+  - id: cov2_salt_and_amino_lists
+    behaviour: execute
+    tools: [list_salts, list_amino_acids]
+    brief: The user asks which metal salts the SBU search recognises, or which amino acids can be used as substituent fragments.
+    slots:
+      ask: [metal salts, amino acids, both]
+    variants: 3
+
+  - id: cov2_current_revision_info
+    behaviour: execute
+    tools: [revision_get]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {smiles: "{smiles}"}}
+    brief: The user asks which exact revision of the structure is open right now, with its formula and content hash, so they can cite it.
+    slots:
+      smiles: ["CCO", "c1ccccc1O", "CC(=O)O"]
+    variants: 2
+
+  - id: cov2_import_cif_then_clean
+    behaviour: execute
+    tools: [import_structure]
+    brief: >-
+      The user pastes the complete text of a CIF file, at least fifteen lines with
+      cell parameters, a space group and an atom-site loop written out in full in
+      the message, and asks to load it. It is a small coordination polymer that
+      still contains lattice water.
+    followups:
+      - behaviour: execute
+        tools: [remove_guests]
+        uses_prior_revision: true
+        brief: The user asks to remove the unbound lattice water from the file they uploaded, keeping anything bonded to a metal.
+    variants: 3
+
+  - id: cov2_pxrd_import_then_refine
+    behaviour: execute
+    tools: [pxrd_import_pattern]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: >-
+      The user pastes about fifteen lines of measured powder data (2-theta and
+      intensity, written out in the message) and asks to attach it to the current
+      structure.
+    followups:
+      - behaviour: execute
+        tools: [pxrd_refine_cell]
+        uses_prior_revision: true
+        brief: The user asks to refine the unit cell against the pattern they just attached, keeping the chemistry.
+    slots:
+      zeolite: [SOD, LTA]
+    variants: 2
+
+  - id: cov2_pxrd_import_then_clear
+    behaviour: execute
+    tools: [pxrd_import_pattern]
+    uses_prior_revision: true
+    setup:
+      - tool: build_structure
+        parameters: {body: {zeolite: "{zeolite}"}}
+    brief: >-
+      The user pastes about fifteen lines of measured powder data (2-theta and
+      intensity, written out in the message) and asks to attach it to the current
+      structure.
+    followups:
+      - behaviour: execute
+        tools: [pxrd_clear_patterns]
+        uses_prior_revision: true
+        brief: The user decides the pattern was the wrong sample and asks to detach it.
+    slots:
+      zeolite: [MFI, SOD]
+    variants: 2
+
+  - id: cov2_workflow_in_one_go
+    behaviour: execute
+    tools: [workflow_validate, workflow_create]
+    brief: >-
+      The user describes a short sequence to run as one workflow: build a named
+      molecule, functionalise it with a stated group, relax it with the fast force
+      field, then analyse it. They want it set up as a single linked job.
+    slots:
+      molecule: [benzene, pyridine, toluene]
+      group: [amino, hydroxyl, fluoro]
+    variants: 3
